@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -9,20 +9,21 @@ import { Plus, Search, Filter, Download, Edit, Trash2, Eye, Calendar, FileText, 
 import { useNavigate } from 'react-router';
 import { FileDown, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
+import * as examApi from '../api/examApi';
 
 interface Exam {
-  id: string;
-  name: string;
-  type: 'Mid-term' | 'Final' | 'Unit Test' | 'Practical';
-  subject: string;
-  class: string;
-  date: string;
-  time: string;
-  duration: string;
-  totalMarks: number;
-  room: string;
-  examiner: string;
-  status: 'Scheduled' | 'Ongoing' | 'Completed' | 'Cancelled';
+  examId: number;
+  examName: string;
+  examTypeId: number;
+  examTypeName: string;
+  classId: number;
+  className: string;
+  academicYearId: string;
+  academicYearName: string;
+  startDate: string;
+  endDate: string;
+  venue: string;
+  isActive: boolean;
 }
 
 interface Result {
@@ -44,65 +45,6 @@ const statsCards = [
   { title: 'Upcoming Exams', value: '12', icon: Calendar, color: 'from-orange-500 to-orange-600', change: '+3' },
   { title: 'Completed Exams', value: '32', icon: CheckCircle, color: 'from-green-500 to-green-600', change: '+2' },
   { title: 'Avg Pass Rate', value: '87%', icon: Award, color: 'from-purple-500 to-purple-600', change: '+5%' },
-];
-
-const mockExams: Exam[] = [
-  {
-    id: 'EXM001',
-    name: 'Mathematics Mid-term',
-    type: 'Mid-term',
-    subject: 'Mathematics',
-    class: 'Class 10-A',
-    date: '2024-03-15',
-    time: '09:00 AM',
-    duration: '3 hours',
-    totalMarks: 100,
-    room: 'Room 201',
-    examiner: 'Dr. Sarah Johnson',
-    status: 'Scheduled',
-  },
-  {
-    id: 'EXM002',
-    name: 'Physics Unit Test',
-    type: 'Unit Test',
-    subject: 'Physics',
-    class: 'Class 10-B',
-    date: '2024-02-25',
-    time: '10:00 AM',
-    duration: '2 hours',
-    totalMarks: 50,
-    room: 'Room 202',
-    examiner: 'Prof. Michael Chen',
-    status: 'Ongoing',
-  },
-  {
-    id: 'EXM003',
-    name: 'Chemistry Final Exam',
-    type: 'Final',
-    subject: 'Chemistry',
-    class: 'Class 9-A',
-    date: '2024-02-20',
-    time: '09:00 AM',
-    duration: '3 hours',
-    totalMarks: 100,
-    room: 'Room 301',
-    examiner: 'Dr. Emily Brown',
-    status: 'Completed',
-  },
-  {
-    id: 'EXM004',
-    name: 'Computer Science Practical',
-    type: 'Practical',
-    subject: 'Computer Science',
-    class: 'Class 10-A',
-    date: '2024-03-20',
-    time: '02:00 PM',
-    duration: '2 hours',
-    totalMarks: 30,
-    room: 'Computer Lab',
-    examiner: 'Mr. David Wilson',
-    status: 'Scheduled',
-  },
 ];
 
 const mockResults: Result[] = [
@@ -151,6 +93,11 @@ export function ExamManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'exams' | 'results'>('exams');
   const [selectedType, setSelectedType] = useState('all');
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [examTypeMap, setExamTypeMap] = useState<Record<string, string>>({});
+  const [classMap, setClassMap] = useState<Record<string, string>>({});
+  const [academicYearMap, setAcademicYearMap] = useState<Record<string, string>>({});
+  const [isLoadingExams, setIsLoadingExams] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -164,7 +111,140 @@ export function ExamManagement() {
     });
   };
 
-  const examTypes = ['All', 'Mid-term', 'Final', 'Unit Test', 'Practical'];
+  const toLookupMap = (
+    items: any[],
+    idKeys: string[],
+    nameKeys: string[],
+  ): Record<string, string> => {
+    return items.reduce((acc: Record<string, string>, item: any) => {
+      const idKey = idKeys.find((k) => item?.[k] !== undefined && item?.[k] !== null && String(item?.[k]).trim() !== '');
+      const nameKey = nameKeys.find((k) => item?.[k] !== undefined && item?.[k] !== null && String(item?.[k]).trim() !== '');
+
+      if (!idKey || !nameKey) return acc;
+
+      const rawId = String(item[idKey]).trim();
+      const name = String(item[nameKey] ?? '').trim();
+
+      if (rawId && name) {
+        acc[rawId] = name;
+      }
+
+      return acc;
+    }, {});
+  };
+
+  const toArray = (payload: any): any[] => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.result)) return payload.result;
+    if (Array.isArray(payload?.items)) return payload.items;
+    return [];
+  };
+
+  const getExamTypeDisplay = (exam: Exam) => exam.examTypeName?.trim() || examTypeMap[String(exam.examTypeId)] || '';
+  const getClassDisplay = (exam: Exam) => exam.className?.trim() || classMap[String(exam.classId)] || '';
+  const getAcademicYearDisplay = (exam: Exam) => exam.academicYearName?.trim() || academicYearMap[String(exam.academicYearId)] || '';
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadExams = async () => {
+      setIsLoadingExams(true);
+      try {
+        const [examsRes, examTypesRes, classesRes, academicYearsRes] = await Promise.allSettled([
+          examApi.getAllExams(),
+          examApi.getExamTypes(),
+          examApi.getClasses(),
+          examApi.getAcademicYears(),
+        ]);
+
+        const response = examsRes.status === 'fulfilled' ? examsRes.value : [];
+        const responseData = toArray(response);
+
+        const examTypeData =
+          examTypesRes.status === 'fulfilled'
+            ? toArray(examTypesRes.value)
+            : [];
+
+        const classData =
+          classesRes.status === 'fulfilled'
+            ? toArray(classesRes.value)
+            : [];
+
+        const academicYearData =
+          academicYearsRes.status === 'fulfilled'
+            ? toArray(academicYearsRes.value)
+            : [];
+
+        const mappedExams: Exam[] = responseData.map((item: any) => ({
+          examId: Number(item?.examId ?? 0),
+          examName: String(item?.examName ?? ''),
+          examTypeId: Number(item?.examTypeId ?? item?.examTypeID ?? item?.typeId ?? 0),
+          examTypeName: String(item?.examTypeName ?? item?.examType ?? item?.typeName ?? ''),
+          classId: Number(item?.classId ?? item?.classID ?? item?.stdClassId ?? 0),
+          className: String(item?.className ?? item?.class ?? item?.classTitle ?? item?.classLabel ?? ''),
+          academicYearId: String(item?.academicYearId ?? item?.yearId ?? item?.academicYrId ?? item?.acdYearId ?? item?.academicYearID ?? ''),
+          academicYearName: String(
+            item?.academicYearName ??
+            item?.academicYear ??
+            item?.yearName ??
+            item?.year ??
+            item?.yearLabel ??
+            item?.session ??
+            item?.academicYearTitle ??
+            item?.academicYearLabel ??
+            item?.acdYearName ??
+            ''
+          ),
+          startDate: String(item?.startDate ?? ''),
+          endDate: String(item?.endDate ?? ''),
+          venue: String(item?.venue ?? ''),
+          isActive: Boolean(item?.isActive),
+        }));
+
+        if (mounted) {
+          setExams(mappedExams);
+          
+          const examTypeMap = toLookupMap(examTypeData, ['examTypeId', 'id', 'value'], ['examTypeName', 'name', 'label']);
+          const classMap = toLookupMap(classData, ['classId', 'id', 'value'], ['className', 'name', 'label']);
+          const academicYearMap = toLookupMap(
+            academicYearData,
+            ['academicYearId', 'yearId', 'id', 'value'],
+            ['academicYearName', 'academicYear', 'yearName', 'name', 'label']
+          );
+          
+          // Debug logging
+          console.log('Academic Year Lookup Map:', academicYearMap);
+          console.log('First 3 exams academicYearId:', mappedExams.slice(0, 3).map(e => ({ id: e.academicYearId, name: e.academicYearName })));
+          
+          setExamTypeMap(examTypeMap);
+          setClassMap(classMap);
+          setAcademicYearMap(academicYearMap);
+        }
+      } catch (error) {
+        console.error('Failed to load exams', error);
+        if (mounted) {
+          setExams([]);
+          toast.error('Failed to load exams list.');
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingExams(false);
+        }
+      }
+    };
+
+    loadExams();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const examTypes = [
+    'All',
+    ...Array.from(new Set(exams.map((exam) => getExamTypeDisplay(exam)).filter(Boolean))),
+  ];
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -180,12 +260,28 @@ export function ExamManagement() {
     setCurrentPage(1);
   };
 
+  const handleDeleteExam = async (examId: number) => {
+    const confirmed = window.confirm('Are you sure you want to delete this exam?');
+    if (!confirmed) return;
+
+    try {
+      await examApi.deleteExam(examId);
+      setExams((prev) => prev.filter((exam) => exam.examId !== examId));
+      toast.success('Exam deleted successfully.');
+    } catch (error) {
+      console.error('Failed to delete exam', error);
+      toast.error('Failed to delete exam.');
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusColors: Record<string, string> = {
       Scheduled: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
       Ongoing: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
       Completed: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
       Cancelled: 'bg-red-500/10 text-red-500 border-red-500/20',
+      Active: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+      Inactive: 'bg-red-500/10 text-red-500 border-red-500/20',
       Pass: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
       Fail: 'bg-red-500/10 text-red-500 border-red-500/20',
     };
@@ -206,7 +302,7 @@ export function ExamManagement() {
     };
 
     return (
-      <Badge className={`${typeColors[type]} border`}>
+      <Badge className={`${typeColors[type] || 'bg-slate-500/10 text-slate-600 border-slate-300'} border`}>
         {type}
       </Badge>
     );
@@ -228,8 +324,29 @@ export function ExamManagement() {
     );
   };
 
+  const filteredExams = exams.filter((exam) => {
+    const normalizedSearchTerm = searchTerm.toLowerCase().trim();
+
+    const matchesSearch =
+      !normalizedSearchTerm ||
+      [
+        exam.examId,
+        exam.examName,
+        getExamTypeDisplay(exam),
+        getClassDisplay(exam),
+        getAcademicYearDisplay(exam),
+        exam.venue,
+      ].some((value) => String(value ?? '').toLowerCase().includes(normalizedSearchTerm));
+
+    const matchesType =
+      selectedType === 'all' ||
+      getExamTypeDisplay(exam).toLowerCase() === selectedType;
+
+    return matchesSearch && matchesType;
+  });
+
   // Sort exams
-  const sortedExams = [...mockExams].sort((a, b) => {
+  const sortedExams = [...filteredExams].sort((a, b) => {
     if (!sortField) return 0;
     let aValue = a[sortField as keyof Exam];
     let bValue = b[sortField as keyof Exam];
@@ -408,7 +525,7 @@ export function ExamManagement() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Search exams, subjects..."
+                    placeholder="Search by exam, class, year, venue..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-white border-2 border-slate-300 rounded-lg pl-10 pr-4 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
@@ -503,11 +620,11 @@ export function ExamManagement() {
                     <tr className="bg-slate-100 border-b border-slate-200">
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('id')}
+                        onClick={() => handleSort('examId')}
                       >
                         <div className="flex items-center gap-2">
                           Exam ID
-                          {sortField === 'id' ? (
+                          {sortField === 'examId' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -516,11 +633,11 @@ export function ExamManagement() {
                       </th>
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('name')}
+                        onClick={() => handleSort('examName')}
                       >
                         <div className="flex items-center gap-2">
                           Exam Name
-                          {sortField === 'name' ? (
+                          {sortField === 'examName' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -529,11 +646,11 @@ export function ExamManagement() {
                       </th>
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('type')}
+                        onClick={() => handleSort('examTypeName')}
                       >
                         <div className="flex items-center gap-2">
-                          Type
-                          {sortField === 'type' ? (
+                          Exam Type
+                          {sortField === 'examTypeName' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -542,24 +659,11 @@ export function ExamManagement() {
                       </th>
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('subject')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Subject
-                          {sortField === 'subject' ? (
-                            sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-                          ) : (
-                            <ChevronUp className="w-4 h-4 opacity-0" />
-                          )}
-                        </div>
-                      </th>
-                      <th
-                        className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('class')}
+                        onClick={() => handleSort('className')}
                       >
                         <div className="flex items-center gap-2">
                           Class
-                          {sortField === 'class' ? (
+                          {sortField === 'className' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -568,11 +672,11 @@ export function ExamManagement() {
                       </th>
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('date')}
+                        onClick={() => handleSort('academicYearName')}
                       >
                         <div className="flex items-center gap-2">
-                          Date & Time
-                          {sortField === 'date' ? (
+                          Academic Year
+                          {sortField === 'academicYearName' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -581,11 +685,11 @@ export function ExamManagement() {
                       </th>
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('duration')}
+                        onClick={() => handleSort('startDate')}
                       >
                         <div className="flex items-center gap-2">
-                          Duration
-                          {sortField === 'duration' ? (
+                          Start Date
+                          {sortField === 'startDate' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -594,11 +698,11 @@ export function ExamManagement() {
                       </th>
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('totalMarks')}
+                        onClick={() => handleSort('endDate')}
                       >
                         <div className="flex items-center gap-2">
-                          Total Marks
-                          {sortField === 'totalMarks' ? (
+                          End Date
+                          {sortField === 'endDate' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -607,11 +711,24 @@ export function ExamManagement() {
                       </th>
                       <th
                         className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
-                        onClick={() => handleSort('status')}
+                        onClick={() => handleSort('venue')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Venue
+                          {sortField === 'venue' ? (
+                            sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
+                          ) : (
+                            <ChevronUp className="w-4 h-4 opacity-0" />
+                          )}
+                        </div>
+                      </th>
+                      <th
+                        className="px-4 xl:px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:text-slate-900"
+                        onClick={() => handleSort('isActive')}
                       >
                         <div className="flex items-center gap-2">
                           Status
-                          {sortField === 'status' ? (
+                          {sortField === 'isActive' ? (
                             sortDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
                           ) : (
                             <ChevronUp className="w-4 h-4 opacity-0" />
@@ -624,35 +741,61 @@ export function ExamManagement() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-200">
-                    {paginatedExams.map((exam, index) => (
+                    {isLoadingExams ? (
+                      <tr>
+                        <td colSpan={10} className="py-6 px-6 text-center text-slate-500 text-sm">
+                          Loading exams...
+                        </td>
+                      </tr>
+                    ) : paginatedExams.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-6 px-6 text-center text-slate-500 text-sm">
+                          No exams found.
+                        </td>
+                      </tr>
+                    ) : paginatedExams.map((exam, index) => (
                       <motion.tr
-                        key={exam.id}
+                        key={exam.examId}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: index * 0.05 }}
                         className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}
                       >
-                        <td className="py-3 px-4 xl:px-6 text-slate-900 font-semibold text-sm">{exam.id}</td>
-                        <td className="py-3 px-4 xl:px-6 text-slate-900 font-semibold text-sm">{exam.name}</td>
-                        <td className="py-3 px-4 xl:px-6">{getTypeBadge(exam.type)}</td>
-                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{exam.subject}</td>
-                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{exam.class}</td>
-                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">
-                          <div>{exam.date}</div>
-                          <div className="text-xs text-slate-500">{exam.time}</div>
+                        <td className="py-3 px-4 xl:px-6 text-slate-900 font-semibold text-sm">{exam.examId}</td>
+                        <td className="py-3 px-4 xl:px-6 text-slate-900 font-semibold text-sm">{exam.examName || '-'}</td>
+                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{getExamTypeDisplay(exam)}</td>
+                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{getClassDisplay(exam)}</td>
+                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{getAcademicYearDisplay(exam)}</td>
+                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{exam.startDate || '-'}</td>
+                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{exam.endDate || '-'}</td>
+                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{exam.venue || '-'}</td>
+                        <td className="py-3 px-4 xl:px-6">
+                          {getStatusBadge(exam.isActive ? 'Active' : 'Inactive')}
                         </td>
-                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{exam.duration}</td>
-                        <td className="py-3 px-4 xl:px-6 text-slate-700 text-sm">{exam.totalMarks}</td>
-                        <td className="py-3 px-4 xl:px-6">{getStatusBadge(exam.status)}</td>
                         <td className="py-3 px-4 xl:px-6">
                           <div className="flex gap-2">
-                            <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+                            <Button 
+                              onClick={() => navigate(`/admin/exams/${exam.examId}`)}
+                              size="sm" 
+                              variant="ghost" 
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
                               <Eye className="w-4 h-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="text-slate-600 hover:text-slate-700 hover:bg-slate-50">
+                            <Button
+                              onClick={() => navigate(`/admin/exams/edit/${exam.examId}`)}
+                              size="sm"
+                              variant="ghost"
+                              className="text-slate-600 hover:text-slate-700 hover:bg-slate-50"
+                            >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                            <Button
+                              onClick={() => handleDeleteExam(exam.examId)}
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>

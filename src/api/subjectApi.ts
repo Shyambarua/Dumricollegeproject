@@ -5,6 +5,7 @@ import type {
   FacultyCompulsorySubject, 
   OptionalSubject, 
   AdditionalSubject,
+  SubjectDto,
   ClassDto,
   ReligionDto,
   CasteDto,
@@ -45,6 +46,13 @@ export async function getOptionalSubjectsByFaculty(facultyId: number): Promise<O
 export async function getAdditionalSubjects(): Promise<AdditionalSubject[]> {
   const response = await fetch(API_BASE_URL + API_ENDPOINTS.additionalSubjects);
   if (!response.ok) throw new Error("Failed to fetch additional subjects");
+  const result = await response.json();
+  return Array.isArray(result) ? result : result.data ?? [];
+}
+
+export async function getSubjects(): Promise<SubjectDto[]> {
+  const response = await fetch(`${API_BASE_URL}/Master/Subjects`);
+  if (!response.ok) throw new Error("Failed to fetch subjects");
   const result = await response.json();
   return Array.isArray(result) ? result : result.data ?? [];
 }

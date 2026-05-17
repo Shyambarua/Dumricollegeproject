@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { motion } from 'motion/react';
 import { ChevronRight, Bell, Calendar, Download, Pin, AlertCircle, Info, CheckCircle } from 'lucide-react';
@@ -12,18 +13,34 @@ interface Notice {
   title: string;
   description: string;
   date: string;
-  category: 'Academic' | 'Event' | 'Holiday' | 'Important' | 'General' | 'Admission';
+  category: 'Academic' | 'Event' | 'Holiday' | 'Important' | 'General' | 'Admission' | string;
+  priority: string;
   isPinned: boolean;
   hasAttachment: boolean;
 }
 
-const notices: Notice[] = [
+const PIN_OVERRIDES_KEY = 'noticePinOverrides';
+
+function readPinOverrides(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(PIN_OVERRIDES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Fallback static notices (kept commented for reference)
+/* const fallbackNotices: Notice[] = [
   {
     id: 'NOT001',
     title: 'Admission Open for Academic Year 2026-27',
     description: 'Dumri College announces admission for UG and PG programs for the academic year 2026-27. Interested students can apply online through our admission portal. Last date to apply: April 30, 2026.',
     date: '2026-03-10',
     category: 'Admission',
+    priority: 'High',
     isPinned: true,
     hasAttachment: true,
   },
@@ -33,6 +50,7 @@ const notices: Notice[] = [
     description: 'The Annual Convocation Ceremony will be held on March 25, 2026 at the University Auditorium. All graduating students and their families are invited to attend this prestigious event.',
     date: '2026-03-08',
     category: 'Event',
+    priority: 'High',
     isPinned: true,
     hasAttachment: false,
   },
@@ -42,6 +60,7 @@ const notices: Notice[] = [
     description: 'The college will remain closed on March 14, 2026 for Holi festival celebrations. Regular classes will resume on March 16, 2026. Wishing everyone a colorful and safe Holi!',
     date: '2026-03-05',
     category: 'Holiday',
+    priority: 'Normal',
     isPinned: false,
     hasAttachment: false,
   },
@@ -51,6 +70,7 @@ const notices: Notice[] = [
     description: 'The end-semester examination schedule for all undergraduate and postgraduate courses has been published. Students are requested to download the timetable from the college website and prepare accordingly.',
     date: '2026-03-01',
     category: 'Academic',
+    priority: 'Normal',
     isPinned: false,
     hasAttachment: true,
   },
@@ -60,6 +80,7 @@ const notices: Notice[] = [
     description: 'Department of Computer Science is organizing a guest lecture series on "Recent Advances in Artificial Intelligence" from March 20-22, 2026. All students and faculty are invited to attend.',
     date: '2026-02-28',
     category: 'Event',
+    priority: 'Normal',
     isPinned: false,
     hasAttachment: true,
   },
@@ -69,6 +90,7 @@ const notices: Notice[] = [
     description: 'The Central Library will operate with extended hours during the examination period. New timings: 6:00 AM to 10:00 PM on all days including weekends.',
     date: '2026-02-25',
     category: 'General',
+    priority: 'Normal',
     isPinned: false,
     hasAttachment: false,
   },
@@ -78,6 +100,7 @@ const notices: Notice[] = [
     description: 'All students who have applied for admission must complete their document verification by March 31, 2026. Please bring original documents along with photocopies to the Admission Office.',
     date: '2026-02-22',
     category: 'Important',
+    priority: 'Urgent',
     isPinned: false,
     hasAttachment: true,
   },
@@ -87,6 +110,7 @@ const notices: Notice[] = [
     description: 'Registration is now open for the Annual Sports Meet 2026. Students interested in participating should register with the Sports Department by March 18, 2026.',
     date: '2026-02-20',
     category: 'Event',
+    priority: 'Normal',
     isPinned: false,
     hasAttachment: false,
   },
@@ -96,6 +120,7 @@ const notices: Notice[] = [
     description: 'The deadline for merit-based scholarship applications has been extended to March 20, 2026. Eligible students are encouraged to apply through the student portal.',
     date: '2026-02-18',
     category: 'Academic',
+    priority: 'Normal',
     isPinned: false,
     hasAttachment: true,
   },
@@ -105,10 +130,11 @@ const notices: Notice[] = [
     description: 'A three-day Faculty Development Program on "Digital Teaching Methods and E-Learning Tools" will be conducted from March 15-17, 2026. All teaching staff are requested to participate.',
     date: '2026-02-15',
     category: 'General',
+    priority: 'Normal',
     isPinned: false,
     hasAttachment: false,
   },
-];
+]; */
 
 const getCategoryBadge = (category: string) => {
   const colors = {
@@ -136,13 +162,108 @@ const getCategoryBadge = (category: string) => {
   );
 };
 
+// Fetch notices from API and map them
+const useFetchNotices = () => {
+  const [list, setList] = useState<Notice[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchNotices = async () => {
+      try {
+        const res = await fetch('https://localhost:44390/api/Notice?pageNumber=1&pageSize=10');
+        if (!res.ok) {
+          console.error('Failed to fetch notices', res.status);
+          setList([]);
+          return;
+        }
+        const data = await res.json();
+
+        // Handle various API response shapes
+        const items: any[] = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data?.items)
+          ? data.items
+          : data?.notices ?? [];
+
+        // Map API response to Notice interface
+        const overrides = readPinOverrides();
+        const mapped: Notice[] = items.map((item: any) => {
+          const priority = item.priority ?? 'Normal';
+          const id = String(item.noticeId ?? item.id ?? '');
+          const baseIsPinned = priority.toLowerCase() === 'high' || item.isPinned === true;
+          return {
+            id,
+            title: item.noticeTitle ?? item.title ?? 'Untitled',
+            description: item.noticeContent ?? item.description ?? '',
+            date: item.publishDate ?? item.date ?? new Date().toISOString().split('T')[0],
+            category: item.category ?? 'General',
+            priority: priority,
+            isPinned: Object.prototype.hasOwnProperty.call(overrides, id)
+              ? overrides[id]
+              : baseIsPinned,
+            hasAttachment: Array.isArray(item.noticeAttachments) ? item.noticeAttachments.length > 0 : item.hasAttachment === true,
+          };
+        });
+
+        if (mounted) setList(mapped);
+      } catch (e) {
+        console.error('Error loading notices', e);
+        setList([]);
+      }
+    };
+
+    fetchNotices();
+    
+    // Auto-refresh every 5 seconds to pick up updates from admin panel (pin/unpin actions)
+    const interval = setInterval(() => {
+      if (mounted) fetchNotices();
+    }, 5000);
+
+    const onPinnedUpdated = () => {
+      if (mounted) fetchNotices();
+    };
+
+    window.addEventListener('notice-pin-updated', onPinnedUpdated);
+
+    return () => { 
+      mounted = false;
+      clearInterval(interval);
+      window.removeEventListener('notice-pin-updated', onPinnedUpdated);
+    };
+  }, []);
+
+  return list;
+};
+
 export function NoticesPage() {
   const navigate = useNavigate();
+  const notices: Notice[] = useFetchNotices();
 
-  const pinnedNotices = notices.filter(n => n.isPinned);
-  const regularNotices = notices.filter(n => !n.isPinned);
-  const urgentCount = notices.filter(n => n.category === 'Important').length;
-  const thisMonthCount = notices.filter(n => new Date(n.date).getMonth() === 2).length; // March
+  const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'thisMonth'>('all');
+
+  // Count urgent notices (only when priority is set to 'Urgent')
+  const urgentCount = notices.filter(n => 
+    n.priority.toLowerCase() === 'urgent'
+  ).length;
+
+  // Count notices from current month
+  const currentMonth = new Date().getMonth();
+  const thisMonthCount = notices.filter(n => 
+    new Date(n.date).getMonth() === currentMonth
+  ).length;
+
+  const visibleNotices = notices.filter((n) => {
+    if (activeFilter === 'urgent') return n.priority.toLowerCase() === 'urgent';
+    if (activeFilter === 'thisMonth') return new Date(n.date).getMonth() === currentMonth;
+    return true;
+  });
+
+  // Filter notices based on priority (High priority = pinned)
+  const pinnedNotices = visibleNotices.filter(n => n.isPinned);
+  const regularNotices = visibleNotices.filter(n => !n.isPinned);
 
   return (
     <div className="min-h-screen bg-white">
@@ -206,7 +327,10 @@ export function NoticesPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
               >
-                <Card className="bg-gradient-to-br from-blue-500 to-blue-600 border-0 shadow-lg p-6">
+                <Card
+                  onClick={() => setActiveFilter('all')}
+                  className={`bg-gradient-to-br from-blue-500 to-blue-600 border-0 shadow-lg p-6 cursor-pointer transition-all ${activeFilter === 'all' ? 'ring-2 ring-blue-200 scale-[1.01]' : ''}`}
+                >
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
                       <Bell className="w-6 h-6 text-white" />
@@ -224,7 +348,10 @@ export function NoticesPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
               >
-                <Card className="bg-gradient-to-br from-red-500 to-red-600 border-0 shadow-lg p-6">
+                <Card
+                  onClick={() => setActiveFilter((prev) => (prev === 'urgent' ? 'all' : 'urgent'))}
+                  className={`bg-gradient-to-br from-red-500 to-red-600 border-0 shadow-lg p-6 cursor-pointer transition-all ${activeFilter === 'urgent' ? 'ring-2 ring-red-200 scale-[1.01]' : ''}`}
+                >
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
                       <AlertCircle className="w-6 h-6 text-white" />
@@ -260,7 +387,10 @@ export function NoticesPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
               >
-                <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 border-0 shadow-lg p-6">
+                <Card
+                  onClick={() => setActiveFilter((prev) => (prev === 'thisMonth' ? 'all' : 'thisMonth'))}
+                  className={`bg-gradient-to-br from-emerald-500 to-emerald-600 border-0 shadow-lg p-6 cursor-pointer transition-all ${activeFilter === 'thisMonth' ? 'ring-2 ring-emerald-200 scale-[1.01]' : ''}`}
+                >
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
                       <Calendar className="w-6 h-6 text-white" />
@@ -286,7 +416,7 @@ export function NoticesPage() {
                   Pinned Notices
                 </h3>
                 <div className="space-y-4">
-                  {pinnedNotices.map((notice, index) => (
+                  {pinnedNotices.map((notice: Notice, index: number) => (
                     <motion.div
                       key={notice.id}
                       initial={{ opacity: 0, y: 20 }}
@@ -344,7 +474,7 @@ export function NoticesPage() {
                 All Notices
               </h3>
               <div className="space-y-4">
-                {regularNotices.map((notice, index) => (
+                {regularNotices.map((notice: Notice, index: number) => (
                   <motion.div
                     key={notice.id}
                     initial={{ opacity: 0, y: 20 }}

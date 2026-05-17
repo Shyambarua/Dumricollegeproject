@@ -1,0 +1,1 @@
+import{j as a,ai as t,m as i}from"./index-1Ebb-dUF.js";import{H as o}from"./HolidayCalendar-CNHQdOkA.js";function e(){return a.jsx(t,{role:"student",pageTitle:"Holiday Calendar",children:a.jsx(i.div,{initial:{opacity:0,y:20},animate:{opacity:1,y:0},transition:{duration:.3},className:"space-y-6",children:a.jsx(o,{variant:"student"})})})}export{e as StudentHoliday};

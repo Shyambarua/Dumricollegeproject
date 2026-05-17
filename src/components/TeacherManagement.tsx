@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   UserPlus,
@@ -14,6 +14,7 @@ import {
   Users,
   ChevronUp,
   ChevronDown,
+  AlertCircle,
 } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
@@ -21,8 +22,9 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { PortalLayout } from './PortalLayout';
 import { motion } from 'motion/react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { TablePagination } from './ui/table-pagination';
+import { getClasses, getSubjects } from '../api/subjectApi';
 
 interface Teacher {
   id: string;
@@ -38,6 +40,435 @@ interface Teacher {
   avatar?: string;
   salary: string;
   employeeId: string;
+}
+
+function getTeacherField(teacher: any, keys: string[]) {
+  for (const key of keys) {
+    if (teacher?.[key] !== undefined && teacher?.[key] !== null && teacher?.[key] !== '') {
+      return teacher[key];
+    }
+  }
+  return '';
+}
+
+function normalizeTextValue(value: any) {
+  if (value === undefined || value === null || value === '') return '';
+  return String(value);
+}
+
+function joinNonEmpty(parts: any[]) {
+  return parts.map(normalizeTextValue).filter(Boolean).join(' ').trim();
+}
+
+function buildClassLookup(classes: any[]): Record<string, string> {
+  return classes.reduce((lookup, classItem) => {
+    const id = normalizeTextValue(getTeacherField(classItem, ['id', 'Id', 'classId', 'ClassId']));
+    const name = normalizeTextValue(getTeacherField(classItem, ['name', 'Name', 'className', 'ClassName']));
+
+    if (id && name) {
+      lookup[id] = name;
+    }
+
+    return lookup;
+  }, {} as Record<string, string>);
+}
+
+function buildSubjectLookup(subjects: any[]): Record<string, string> {
+  return subjects.reduce((lookup, subjectItem) => {
+    const id = normalizeTextValue(getTeacherField(subjectItem, ['id', 'Id', 'subjectId', 'SubjectId']));
+    const name = normalizeTextValue(getTeacherField(subjectItem, ['name', 'Name', 'subjectName', 'SubjectName']));
+
+    if (id && name) {
+      lookup[id] = name;
+    }
+
+    return lookup;
+  }, {} as Record<string, string>);
+}
+
+function resolveClassLabel(value: any, classLookup: Record<string, string>) {
+  const textValue = normalizeTextValue(value);
+  if (!textValue) return '';
+
+  if (classLookup[textValue]) {
+    return classLookup[textValue];
+  }
+
+  return textValue;
+}
+
+function normalizeClassesValue(rawClasses: any, classLookup: Record<string, string> = {}): string[] {
+  if (!rawClasses) return [];
+
+  if (Array.isArray(rawClasses)) {
+    return rawClasses
+      .map((item) => {
+        if (typeof item === 'string' || typeof item === 'number') return resolveClassLabel(item, classLookup);
+        const className = normalizeTextValue(
+          getTeacherField(item, [
+            'id',
+            'Id',
+            'classId',
+            'ClassId',
+            'className',
+            'ClassName',
+            'class',
+            'Class',
+            'teacherClass',
+            'TeacherClass',
+            'teacherClassName',
+            'TeacherClassName',
+            'name',
+            'Name',
+            'title',
+            'Title',
+            'grade',
+            'Grade',
+            'section',
+            'Section',
+            'classTitle',
+            'ClassTitle',
+            'classTeacher',
+            'ClassTeacher',
+          ])
+        );
+        if (className) return resolveClassLabel(className, classLookup);
+        return normalizeTextValue(
+          getTeacherField(item, [
+            'classSection',
+            'ClassSection',
+            'classLabel',
+            'ClassLabel',
+            'assignedClassName',
+            'AssignedClassName',
+            'classDisplayName',
+            'ClassDisplayName',
+          ])
+        );
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof rawClasses === 'string') {
+    return rawClasses
+      .split(',')
+      .map((value) => resolveClassLabel(value.trim(), classLookup))
+      .filter(Boolean);
+  }
+
+  if (typeof rawClasses === 'number') {
+    return [resolveClassLabel(rawClasses, classLookup)].filter(Boolean);
+  }
+
+  if (typeof rawClasses === 'object') {
+    const className = normalizeTextValue(
+      getTeacherField(rawClasses, [
+        'id',
+        'Id',
+        'classId',
+        'ClassId',
+        'className',
+        'ClassName',
+        'class',
+        'Class',
+        'teacherClass',
+        'TeacherClass',
+        'teacherClassName',
+        'TeacherClassName',
+        'assignedClass',
+        'AssignedClass',
+        'assignedClassName',
+        'AssignedClassName',
+      ])
+    );
+    const grade = normalizeTextValue(getTeacherField(rawClasses, ['grade', 'Grade']));
+    const section = normalizeTextValue(getTeacherField(rawClasses, ['section', 'Section']));
+    const subjectName = normalizeTextValue(getTeacherField(rawClasses, ['subjectName', 'SubjectName', 'subject', 'Subject']));
+
+    const composed = joinNonEmpty([
+      resolveClassLabel(className, classLookup),
+      grade ? `Grade ${grade}` : '',
+      section ? `Section ${section}` : '',
+      subjectName,
+    ]);
+    return composed ? [composed] : [];
+  }
+
+  return [];
+}
+
+function resolveSubjectLabel(value: any, subjectLookup: Record<string, string>) {
+  const textValue = normalizeTextValue(value);
+  if (!textValue) return '';
+
+  if (subjectLookup[textValue]) {
+    return subjectLookup[textValue];
+  }
+
+  return textValue;
+}
+
+function normalizeExperienceValue(teacher: any): string {
+  const rawExperience = getTeacherField(teacher, [
+    'experience',
+    'Experience',
+    'experienceYear',
+    'ExperienceYear',
+    'experienceYears',
+    'ExperienceYears',
+    'experienceYears',
+    'ExperienceYears',
+    'yearsExperience',
+    'YearsExperience',
+    'yearsOfExperience',
+    'YearsOfExperience',
+    'totalExperience',
+    'TotalExperience',
+    'workExperience',
+    'WorkExperience',
+    'experienceInYears',
+    'ExperienceInYears',
+    'teachingExperience',
+    'TeachingExperience',
+    'teacherExperience',
+    'TeacherExperience',
+    'yearsWorked',
+    'YearsWorked',
+    'yearsTeaching',
+    'YearsTeaching',
+  ]);
+
+  const nestedExperience =
+    getTeacherField(teacher, ['experienceDetails', 'ExperienceDetails', 'profile', 'Profile', 'teacherProfile', 'TeacherProfile']) ||
+    getTeacherField(teacher, ['experienceInfo', 'ExperienceInfo']);
+
+  const nestedYears = nestedExperience
+    ? getTeacherField(nestedExperience, [
+        'years',
+        'Years',
+        'value',
+        'Value',
+        'totalYears',
+        'TotalYears',
+        'experienceYears',
+        'ExperienceYears',
+      ])
+    : '';
+
+  const experienceSource = rawExperience !== undefined && rawExperience !== null && rawExperience !== '' ? rawExperience : nestedYears;
+
+  if (experienceSource === undefined || experienceSource === null || experienceSource === '') {
+    const joiningDate = normalizeTextValue(getTeacherField(teacher, ['joiningDate', 'JoiningDate', 'dateOfJoining', 'DateOfJoining']));
+    if (!joiningDate) return '';
+
+    const parsedDate = new Date(joiningDate);
+    if (Number.isNaN(parsedDate.getTime())) return '';
+
+    const diffMs = Date.now() - parsedDate.getTime();
+    const years = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24 * 365.25)));
+    const months = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44)) - years * 12);
+
+    if (years > 0) {
+      return years === 1 ? '1 year' : `${years} years`;
+    }
+
+    if (months > 0) {
+      return months === 1 ? '1 month' : `${months} months`;
+    }
+
+    return 'Less than 1 year';
+  }
+
+  const experienceText = String(experienceSource).trim();
+  if (!experienceText) return '';
+
+  return /\byears?\b/i.test(experienceText) ? experienceText : `${experienceText} years`;
+}
+
+function normalizeStatusValue(teacher: any): Teacher['status'] {
+  const rawStatus = normalizeTextValue(
+    getTeacherField(teacher, [
+      'status',
+      'Status',
+      'statusName',
+      'StatusName',
+      'teacherStatus',
+      'TeacherStatus',
+      'employmentStatus',
+      'EmploymentStatus',
+    ])
+  ).toLowerCase();
+
+  if (!rawStatus) {
+    const isActive = teacher?.isActive ?? teacher?.IsActive;
+    if (typeof isActive === 'boolean') return isActive ? 'active' : 'inactive';
+  }
+
+  if (rawStatus.includes('leave')) return 'on-leave';
+  if (rawStatus.includes('inactive') || rawStatus.includes('disabled')) return 'inactive';
+  if (rawStatus.includes('active') || rawStatus.includes('enabled')) return 'active';
+
+  return 'active';
+}
+
+function mapTeacherApiItem(teacher: any, classLookup: Record<string, string> = {}, subjectLookup: Record<string, string> = {}): Teacher {
+  const firstName = normalizeTextValue(getTeacherField(teacher, ['firstName', 'FirstName', 'givenName', 'GivenName']));
+  const lastName = normalizeTextValue(getTeacherField(teacher, ['lastName', 'LastName', 'surname', 'Surname', 'familyName', 'FamilyName']));
+  const title = normalizeTextValue(getTeacherField(teacher, ['title', 'Title', 'prefix', 'Prefix', 'salutation', 'Salutation']));
+  const fullName = normalizeTextValue(
+    getTeacherField(teacher, [
+      'name',
+      'Name',
+      'teacherName',
+      'TeacherName',
+      'fullName',
+      'FullName',
+      'teacherFullName',
+      'TeacherFullName',
+      'displayName',
+      'DisplayName',
+      'employeeName',
+      'EmployeeName',
+      'teacherFullname',
+      'TeacherFullname',
+    ])
+  ) || joinNonEmpty([title, firstName, lastName]);
+
+  const rawClasses = getTeacherField(teacher, [
+    'classes',
+    'Classes',
+    'class',
+    'Class',
+    'className',
+    'ClassName',
+    'classNames',
+    'ClassNames',
+    'assignedClass',
+    'AssignedClass',
+    'assignedClassName',
+    'AssignedClassName',
+    'teacherClass',
+    'TeacherClass',
+    'teacherClassName',
+    'TeacherClassName',
+    'classTeacher',
+    'ClassTeacher',
+    'classTeacherName',
+    'ClassTeacherName',
+    'classNames',
+    'ClassNames',
+    'assignedClasses',
+    'AssignedClasses',
+    'teacherClasses',
+    'TeacherClasses',
+    'classList',
+    'ClassList',
+    'classAssignments',
+    'ClassAssignments',
+    'assignedClassList',
+    'AssignedClassList',
+  ]);
+  const classes = normalizeClassesValue(rawClasses, classLookup);
+  const classField = normalizeTextValue(
+    getTeacherField(teacher, [
+      'class',
+      'Class',
+      'className',
+      'ClassName',
+      'classTitle',
+      'ClassTitle',
+      'assignedClass',
+      'AssignedClass',
+      'teacherClass',
+      'TeacherClass',
+      'classTeacher',
+      'ClassTeacher',
+    ])
+  );
+
+  const directEmail = normalizeTextValue(
+    getTeacherField(teacher, ['email', 'Email', 'emailAddress', 'EmailAddress', 'contactEmail', 'ContactEmail'])
+  );
+  const directPhone = normalizeTextValue(
+    getTeacherField(teacher, ['phone', 'Phone', 'phoneNumber', 'PhoneNumber', 'mobile', 'Mobile', 'mobileNumber', 'MobileNumber', 'contactNumber', 'ContactNumber'])
+  );
+
+  const contactObject = getTeacherField(teacher, ['contact', 'Contact']);
+  const contactEmail = directEmail || normalizeTextValue(getTeacherField(contactObject, ['email', 'Email', 'emailAddress', 'EmailAddress']));
+  const contactPhone = directPhone || normalizeTextValue(getTeacherField(contactObject, ['phone', 'Phone', 'phoneNumber', 'PhoneNumber', 'mobile', 'Mobile', 'mobileNumber', 'MobileNumber']));
+  const rawSubject = getTeacherField(teacher, [
+    'subject',
+    'Subject',
+    'subjectName',
+    'SubjectName',
+    'subjectTitle',
+    'SubjectTitle',
+    'subjectId',
+    'SubjectId',
+    'teacherSubject',
+    'TeacherSubject',
+    'teacherSubjectName',
+    'TeacherSubjectName',
+  ]);
+  const subject = resolveSubjectLabel(rawSubject, subjectLookup) || String(getTeacherField(teacher, ['subjectName', 'SubjectName', 'subject', 'Subject']));
+
+  return {
+    id: String(getTeacherField(teacher, ['id', 'Id', 'teacherId', 'TeacherId']) || crypto.randomUUID()),
+    name: fullName || joinNonEmpty([firstName, lastName]) || String(getTeacherField(teacher, ['employeeId', 'EmployeeId'])) || 'Unnamed Teacher',
+    email: contactEmail,
+    phone: contactPhone,
+    subject,
+    qualification: String(getTeacherField(teacher, ['qualificationName', 'QualificationName', 'qualification', 'Qualification'])),
+    experience: normalizeExperienceValue(teacher),
+    joiningDate: String(getTeacherField(teacher, ['joiningDate', 'JoiningDate', 'dateOfJoining', 'DateOfJoining'])),
+    classes: classes.length > 0 ? classes : classField ? [classField] : [],
+    status: normalizeStatusValue(teacher),
+    avatar: String(getTeacherField(teacher, ['avatar', 'Avatar'])) || undefined,
+    salary: String(getTeacherField(teacher, ['salary', 'Salary'])),
+    employeeId: String(getTeacherField(teacher, ['employeeId', 'EmployeeId'])),
+  };
+}
+
+async function hydrateMissingTeacherFields(
+  teacherItems: any[],
+  classLookup: Record<string, string>,
+  subjectLookup: Record<string, string>,
+): Promise<Teacher[]> {
+  const mappedTeachers = await Promise.all(
+    teacherItems.map(async (item) => {
+      const mappedTeacher = mapTeacherApiItem(item, classLookup, subjectLookup);
+
+      if (mappedTeacher.subject && mappedTeacher.experience) {
+        return mappedTeacher;
+      }
+
+      const teacherId = getTeacherField(item, ['id', 'Id', 'teacherId', 'TeacherId']);
+      if (!teacherId) {
+        return mappedTeacher;
+      }
+
+      try {
+        const detailResponse = await fetch(`https://localhost:44328/api/Teacher/${teacherId}`);
+        if (!detailResponse.ok) {
+          return mappedTeacher;
+        }
+
+        const detailData = await detailResponse.json();
+        const detailTeacher = Array.isArray(detailData) ? detailData[0] : (detailData?.data ?? detailData);
+        const detailMapped = mapTeacherApiItem(detailTeacher ?? item, classLookup, subjectLookup);
+
+        return {
+          ...mappedTeacher,
+          subject: mappedTeacher.subject || detailMapped.subject,
+          experience: mappedTeacher.experience || detailMapped.experience,
+        };
+      } catch {
+        return mappedTeacher;
+      }
+    })
+  );
+
+  return mappedTeachers;
 }
 
 export function TeacherManagement() {
@@ -64,94 +495,43 @@ export function TeacherManagement() {
     setCurrentPage(1);
   };
 
-  const [teachers, setTeachers] = useState<Teacher[]>([
-    {
-      id: '1',
-      name: 'Dr. Priya Sharma',
-      email: 'priya.sharma@school.com',
-      phone: '+91 98765 43210',
-      subject: 'Mathematics',
-      qualification: 'M.Sc, B.Ed',
-      experience: '12 years',
-      joiningDate: '2015-06-15',
-      classes: ['Class 10A', 'Class 10B', 'Class 12A'],
-      status: 'active',
-      salary: '₹65,000',
-      employeeId: 'TCH001',
-    },
-    {
-      id: '2',
-      name: 'Mr. Rahul Verma',
-      email: 'rahul.verma@school.com',
-      phone: '+91 98765 43211',
-      subject: 'Physics',
-      qualification: 'M.Sc Physics, B.Ed',
-      experience: '8 years',
-      joiningDate: '2018-07-20',
-      classes: ['Class 11A', 'Class 12A'],
-      status: 'active',
-      salary: '₹58,000',
-      employeeId: 'TCH002',
-    },
-    {
-      id: '3',
-      name: 'Ms. Anjali Patel',
-      email: 'anjali.patel@school.com',
-      phone: '+91 98765 43212',
-      subject: 'English',
-      qualification: 'M.A English, B.Ed',
-      experience: '10 years',
-      joiningDate: '2016-08-10',
-      classes: ['Class 9A', 'Class 9B', 'Class 10A'],
-      status: 'active',
-      salary: '₹55,000',
-      employeeId: 'TCH003',
-    },
-    {
-      id: '4',
-      name: 'Mr. Vikram Singh',
-      email: 'vikram.singh@school.com',
-      phone: '+91 98765 43213',
-      subject: 'Chemistry',
-      qualification: 'M.Sc Chemistry',
-      experience: '6 years',
-      joiningDate: '2020-01-15',
-      classes: ['Class 11B', 'Class 12B'],
-      status: 'on-leave',
-      salary: '₹52,000',
-      employeeId: 'TCH004',
-    },
-    {
-      id: '5',
-      name: 'Ms. Kavita Reddy',
-      email: 'kavita.reddy@school.com',
-      phone: '+91 98765 43214',
-      subject: 'Biology',
-      qualification: 'M.Sc Zoology, B.Ed',
-      experience: '15 years',
-      joiningDate: '2012-03-22',
-      classes: ['Class 11A', 'Class 11B', 'Class 12A'],
-      status: 'active',
-      salary: '₹68,000',
-      employeeId: 'TCH005',
-    },
-    {
-      id: '6',
-      name: 'Mr. Arjun Kumar',
-      email: 'arjun.kumar@school.com',
-      phone: '+91 98765 43215',
-      subject: 'History',
-      qualification: 'M.A History',
-      experience: '5 years',
-      joiningDate: '2021-06-01',
-      classes: ['Class 8A', 'Class 9A', 'Class 10A'],
-      status: 'active',
-      salary: '₹48,000',
-      employeeId: 'TCH006',
-    },
-  ]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [subjectOptions, setSubjectOptions] = useState<string[]>([]);
 
-  const subjects = ['Mathematics', 'Physics', 'Chemistry', 'Biology', 'English', 'History', 'Geography', 'Computer Science', 'Physical Education'];
+  useEffect(() => {
+    const fetchTeachers = async () => {
+      try {
+        const [teacherResponse, classList, subjectList] = await Promise.all([
+          fetch('https://localhost:44328/api/Teacher/GetAllTeacher'),
+          getClasses().catch(() => []),
+          getSubjects().catch(() => []),
+        ]);
+
+        if (!teacherResponse.ok) {
+          throw new Error('Failed to fetch teachers');
+        }
+
+        const data = await teacherResponse.json();
+        const teacherList = Array.isArray(data) ? data : (data?.data ?? data?.teachers ?? []);
+        const classLookup = buildClassLookup(classList);
+        const subjectLookup = buildSubjectLookup(subjectList);
+        setSubjectOptions(
+          subjectList
+            .map((subjectItem: any) => normalizeTextValue(getTeacherField(subjectItem, ['name', 'Name', 'subjectName', 'SubjectName'])))
+            .filter(Boolean)
+        );
+        const hydratedTeachers = await hydrateMissingTeacherFields(teacherList, classLookup, subjectLookup);
+        setTeachers(hydratedTeachers);
+      } catch (error) {
+        console.error('Error fetching teachers:', error);
+        setTeachers([]);
+        setSubjectOptions([]);
+        toast.error('Failed to load teachers');
+      }
+    };
+
+    fetchTeachers();
+  }, []);
 
   const filteredTeachers = teachers.filter((teacher) => {
     const matchesSearch = teacher.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -186,10 +566,26 @@ export function TeacherManagement() {
     currentPage * rowsPerPage
   );
 
-  const handleDeleteTeacher = (id: string) => {
-    if (confirm('Are you sure you want to delete this teacher?')) {
-      setTeachers(teachers.filter((t) => t.id !== id));
+  const handleDeleteTeacher = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this teacher?')) return;
+
+    try {
+      const resp = await fetch(`https://localhost:44328/api/Teacher/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        console.error('Delete failed:', resp.status, text);
+        toast.error('Failed to delete teacher');
+        return;
+      }
+
+      setTeachers((prev) => prev.filter((t) => t.id !== id));
       toast.success('Teacher deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting teacher:', error);
+      toast.error('Failed to delete teacher');
     }
   };
 
@@ -324,7 +720,7 @@ export function TeacherManagement() {
                   className="w-full h-12 px-4 border-2 border-gray-200 rounded-lg bg-white focus:border-blue-400 focus:ring-4 focus:ring-blue-100 outline-none"
                 >
                   <option value="all">All Subjects</option>
-                  {subjects.map((subject) => (
+                  {subjectOptions.map((subject) => (
                     <option key={subject} value={subject}>
                       {subject}
                     </option>
@@ -403,7 +799,6 @@ export function TeacherManagement() {
                         )}
                       </div>
                     </th>
-                    <th className="px-4 xl:px-6 py-4 text-left text-xs xl:text-sm font-semibold text-slate-700 uppercase tracking-wide whitespace-nowrap">Classes</th>
                     <th 
                       className="px-4 xl:px-6 py-4 text-left text-xs xl:text-sm font-semibold text-slate-700 uppercase tracking-wide whitespace-nowrap cursor-pointer hover:bg-slate-200"
                       onClick={() => handleSort('status')}
@@ -455,24 +850,12 @@ export function TeacherManagement() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 xl:px-6 py-4 text-sm text-slate-700 whitespace-nowrap">{teacher.experience}</td>
-                      <td className="px-4 xl:px-6 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {teacher.classes.slice(0, 2).map((cls) => (
-                            <Badge key={cls} variant="outline" className="text-xs border-slate-300 text-slate-700">
-                              {cls}
-                            </Badge>
-                          ))}
-                          {teacher.classes.length > 2 && (
-                            <Badge variant="outline" className="text-xs border-slate-300 text-slate-700">
-                              +{teacher.classes.length - 2}
-                            </Badge>
-                          )}
-                        </div>
+                      <td className="px-4 xl:px-6 py-4 text-sm text-slate-700 whitespace-nowrap">
+                        {teacher.experience || '—'}
                       </td>
                       <td className="px-4 xl:px-6 py-4 whitespace-nowrap">
                         <Badge className={`${getStatusColor(teacher.status)} border capitalize`}>
-                          {teacher.status}
+                          {teacher.status || 'active'}
                         </Badge>
                       </td>
                       <td className="px-4 xl:px-6 py-4 whitespace-nowrap">
@@ -522,9 +905,9 @@ export function TeacherManagement() {
         <TablePagination
           totalItems={filteredTeachers.length}
           itemsPerPage={rowsPerPage}
+          totalPages={Math.max(1, Math.ceil(filteredTeachers.length / rowsPerPage))}
           currentPage={currentPage}
           onPageChange={setCurrentPage}
-          onRowsPerPageChange={handleRowsPerPageChange}
         />
       </div>
     </PortalLayout>

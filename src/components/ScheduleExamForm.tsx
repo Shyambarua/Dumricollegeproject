@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Save, RotateCcw, Plus, X, ArrowLeft } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
@@ -6,6 +6,7 @@ import { PortalLayout } from './PortalLayout';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import axios from 'axios';
+import * as examApi from '../api/examApi';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface ExamSubject {
@@ -17,7 +18,7 @@ interface ExamSubject {
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const API_BASE_URL = 'https://localhost:5001/api/Exam';
+// Note: backend endpoints wired via src/api/examApi.ts
 
 const REQUIRED_FIELDS = [
   'examName', 'examType', 'class', 'academicYear', 'startDate', 'endDate', 'venue',
@@ -193,25 +194,25 @@ export function ScheduleExamForm() {
     setIsSubmitting(true);
     try {
       const payload = {
-        examName: `${formData.examName} - ${formData.examType} (${formData.class})`,
-        examDate: formData.startDate,
+        examName: formData.examName,
+        examTypeId: parseInt(formData.examType) || 0,
+        classId: parseInt(formData.class) || 0,
+        academicYearId: parseInt(formData.academicYear) || 0,
+        startDate: formData.startDate,
         endDate: formData.endDate,
-        academicYear: formData.academicYear,
         venue: formData.venue,
-        instructions: formData.instructions,
-        startTime: examSubjects[0]?.startTime || '09:00',
-        endTime: examSubjects[0]?.endTime || '12:00',
-        subjects: examSubjects.map((sub) => ({
-          subjectName: sub.subject,
-          subjectCode: sub.subject,
-          date: sub.date,
+        createdBy: 0,
+        isActive: true,
+        schedules: examSubjects.map((sub) => ({
+          subjectId: parseInt(sub.subject) || 0,
+          examDate: sub.date,
           startTime: sub.startTime,
           endTime: sub.endTime,
-          marks: parseInt(sub.maxMarks) || 100,
+          maxMarks: parseInt(sub.maxMarks) || 0,
         })),
       };
 
-      await axios.post(API_BASE_URL, payload);
+      await examApi.createExamWithSchedule(payload);
 
       toast.success('Exam Scheduled Successfully!', {
         description: `${formData.examName} for Class ${formData.class} has been scheduled.`,
@@ -229,6 +230,37 @@ export function ScheduleExamForm() {
       setIsSubmitting(false);
     }
   };
+
+  // ── Load master data (exam types, classes, academic years, subjects) ─────
+  const [examTypes, setExamTypes] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [yrs, cls, subs, types] = await Promise.all([
+          examApi.getAcademicYears(),
+          examApi.getClasses(),
+          examApi.getSubjects(),
+          examApi.getExamTypes(),
+        ]);
+        if (!mounted) return;
+        setAcademicYears(Array.isArray(yrs) ? yrs : []);
+        setClasses(Array.isArray(cls) ? cls : []);
+        setSubjects(Array.isArray(subs) ? subs : []);
+        setExamTypes(Array.isArray(types) ? types : []);
+      } catch (err) {
+        console.error('Failed to load master data', err);
+        toast.error('Failed to load lookup data for exams.');
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // ── Sub-components ─────────────────────────────────────────────────────────
   const fieldProps = (name: string) => ({
@@ -299,13 +331,11 @@ export function ScheduleExamForm() {
                     </label>
                     <select {...fieldProps('examType')}>
                       <option value="">Select Exam Type *</option>
-                      <option value="unit-test">Unit Test</option>
-                      <option value="midterm">Mid-Term Exam</option>
-                      <option value="terminal">Terminal Exam</option>
-                      <option value="final">Final Exam</option>
-                      <option value="practical">Practical Exam</option>
-                      <option value="internal">Internal Assessment</option>
-                      <option value="board">Board Exam</option>
+                      {examTypes.map((t: any) => (
+                        <option key={t.examTypeId ?? t.id ?? t.value} value={String(t.examTypeId ?? t.id ?? t.value)}>
+                          {t.examTypeName ?? t.name ?? t.label}
+                        </option>
+                      ))}
                     </select>
                     <ErrorMsg name="examType" />
                   </div>
@@ -319,8 +349,10 @@ export function ScheduleExamForm() {
                     </label>
                     <select {...fieldProps('class')}>
                       <option value="">Select Class *</option>
-                      {Array.from({ length: 12 }, (_, i) => (
-                        <option key={i + 1} value={String(i + 1)}>Class {i + 1}</option>
+                      {classes.map((c: any) => (
+                        <option key={c.classId ?? c.id} value={String(c.classId ?? c.id)}>
+                          {c.className ?? c.name ?? `Class ${c.classId ?? c.id}`}
+                        </option>
                       ))}
                     </select>
                     <ErrorMsg name="class" />
@@ -331,10 +363,11 @@ export function ScheduleExamForm() {
                     </label>
                     <select {...fieldProps('academicYear')}>
                       <option value="">Select Academic Year *</option>
-                      <option value="2023-2024">2023-2024</option>
-                      <option value="2024-2025">2024-2025</option>
-                      <option value="2025-2026">2025-2026</option>
-                      <option value="2026-2027">2026-2027</option>
+                      {academicYears.map((y: any) => (
+                        <option key={y.academicYearId ?? y.id} value={String(y.academicYearId ?? y.id)}>
+                          {y.academicYearName ?? y.name ?? y.label}
+                        </option>
+                      ))}
                     </select>
                     <ErrorMsg name="academicYear" />
                   </div>
@@ -407,15 +440,11 @@ export function ScheduleExamForm() {
                             className={subjectInputCls(subjectErrors[index]?.subject)}
                           >
                             <option value="">Select</option>
-                            <option value="mathematics">Mathematics</option>
-                            <option value="science">Science</option>
-                            <option value="english">English</option>
-                            <option value="hindi">Hindi</option>
-                            <option value="social-science">Social Science</option>
-                            <option value="computer">Computer Science</option>
-                            <option value="physics">Physics</option>
-                            <option value="chemistry">Chemistry</option>
-                            <option value="biology">Biology</option>
+                            {subjects.map((s: any) => (
+                              <option key={s.id ?? s.subjectId ?? s.subjectId} value={String(s.id ?? s.subjectId ?? s.subjectId)}>
+                                {s.name ?? s.subjectName ?? s.name}
+                              </option>
+                            ))}
                           </select>
                           <SubjectErrorMsg index={index} field="subject" />
                         </div>

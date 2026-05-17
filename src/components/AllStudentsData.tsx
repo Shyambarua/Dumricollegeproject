@@ -14,6 +14,10 @@ import {
   Trash2,
   Eye,
   Plus,
+  Megaphone,
+  Calendar,
+  Clock,
+  FileText,
 } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
@@ -37,6 +41,12 @@ type StudentTableRow = {
   status: string;
   createdDateRaw: string;
 };
+
+function formatDate(value?: string) {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString().split('T')[0];
+}
 
 export function AllStudentsData() {
   const navigate = useNavigate();
@@ -64,10 +74,10 @@ export function AllStudentsData() {
         setIsLoading(true);
         setFetchError('');
 
-        const applications = await getStudentApplications();
+        const applicationsResult = await getStudentApplications();
         if (!mounted) return;
 
-        const mappedStudents: StudentTableRow[] = (applications as StudentApplication[]).map((student, index) => {
+        const mappedStudents: StudentTableRow[] = applicationsResult.map((student, index) => {
           const applicationId = student.applicationId;
           const registrationNo = student.registrationNo;
           const applicationNo = student.applicationNo;
@@ -77,7 +87,6 @@ export function AllStudentsData() {
           const className = student.className;
           const applicationStatus = student.applicationStatus;
           const status = student.status;
-          const createdDate = student.createdDate;
           const createdDateRaw = student.createdDateRaw;
           const studentId = student.studentId;
 
@@ -98,10 +107,6 @@ export function AllStudentsData() {
         });
 
         setStudentsData(mappedStudents);
-      } catch (error) {
-        if (!mounted) return;
-        setFetchError(error instanceof Error ? error.message : 'Failed to fetch student applications');
-        setStudentsData([]);
       } finally {
         if (mounted) {
           setIsLoading(false);

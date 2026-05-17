@@ -1,0 +1,1 @@
+import{j as a,ai as i,m as t}from"./index-1Ebb-dUF.js";import{H as r}from"./HolidayCalendar-CNHQdOkA.js";function n(){return a.jsx(i,{role:"teacher",pageTitle:"Holiday Calendar",children:a.jsx(t.div,{initial:{opacity:0,y:20},animate:{opacity:1,y:0},transition:{duration:.3},className:"space-y-6",children:a.jsx(r,{variant:"teacher"})})})}export{n as TeacherHoliday};

@@ -1,0 +1,11 @@
+import{c as o,j as e,e as n,C as c,a as x}from"./index-1Ebb-dUF.js";/**
+ * @license lucide-react v0.487.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const b=[["path",{d:"m11 17-5-5 5-5",key:"13zhaf"}],["path",{d:"m18 17-5-5 5-5",key:"h8a8et"}]],v=o("chevrons-left",b);/**
+ * @license lucide-react v0.487.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const f=[["path",{d:"m6 17 5-5-5-5",key:"xnjwq"}],["path",{d:"m13 17 5-5-5-5",key:"17xmmf"}]],j=o("chevrons-right",f);function k({currentPage:s,totalPages:t,onPageChange:i,totalItems:a,itemsPerPage:m=10}){const r=a?(s-1)*m+1:null,h=a?Math.min(s*m,a):null;return e.jsxs("div",{className:"px-6 py-4 flex items-center justify-between border-t border-slate-800",children:[a?e.jsxs("p",{className:"text-slate-400 text-sm",children:["Showing ",r,"-",h," of ",a," results"]}):e.jsxs("p",{className:"text-slate-400 text-sm",children:["Page ",s," of ",t]}),e.jsxs("div",{className:"flex items-center gap-2",children:[e.jsx(n,{variant:"outline",size:"sm",className:"border-slate-700 text-slate-300 hover:bg-slate-800",onClick:()=>i(1),disabled:s===1,children:e.jsx(v,{className:"w-4 h-4"})}),e.jsx(n,{variant:"outline",size:"sm",className:"border-slate-700 text-slate-300 hover:bg-slate-800",onClick:()=>i(s-1),disabled:s===1,children:e.jsx(c,{className:"w-4 h-4"})}),e.jsx("div",{className:"flex items-center gap-1",children:Array.from({length:Math.min(5,t)},(N,d)=>{let l;return t<=5||s<=3?l=d+1:s>=t-2?l=t-4+d:l=s-2+d,e.jsx(n,{variant:s===l?"default":"outline",size:"sm",className:s===l?"bg-amber-500 hover:bg-amber-600 text-white border-amber-500":"border-slate-700 text-slate-300 hover:bg-slate-800",onClick:()=>i(l),children:l},l)})}),e.jsx(n,{variant:"outline",size:"sm",className:"border-slate-700 text-slate-300 hover:bg-slate-800",onClick:()=>i(s+1),disabled:s===t,children:e.jsx(x,{className:"w-4 h-4"})}),e.jsx(n,{variant:"outline",size:"sm",className:"border-slate-700 text-slate-300 hover:bg-slate-800",onClick:()=>i(t),disabled:s===t,children:e.jsx(j,{className:"w-4 h-4"})})]})]})}export{k as T};

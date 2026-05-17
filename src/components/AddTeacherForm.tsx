@@ -43,6 +43,24 @@ function inputCls(error: string | null) {
   ].join(' ');
 }
 
+function getOptionId(item: any, preferredKeys: string[]) {
+  for (const key of preferredKeys) {
+    if (item?.[key] !== undefined && item?.[key] !== null) {
+      return item[key];
+    }
+  }
+  return '';
+}
+
+function getOptionLabel(item: any, preferredKeys: string[]) {
+  for (const key of preferredKeys) {
+    if (item?.[key]) {
+      return item[key];
+    }
+  }
+  return '';
+}
+
 export function AddTeacherForm() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,6 +89,13 @@ export function AddTeacherForm() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleStateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const { value } = e.target;
+    setFormData((prev) => ({ ...prev, state: value, city: '' }));
+    setSelectedStateId(value || null);
+    setCities([]);
+  };
+
   const handleBlur = (
     e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
@@ -92,13 +117,15 @@ export function AddTeacherForm() {
     setTouched({});
     setPhotoPreview(null);
     setPhotoFile(null);
+    setSelectedStateId(null);
+    setCities([]);
   };
   const [genders, setGenders] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchGenders = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_gender');
+        const res = await fetch('https://localhost:44328/api/Master/Genders');
 
         if (!res.ok) {
           throw new Error('Failed to fetch genders');
@@ -120,7 +147,7 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
   useEffect(() => {
     const fetchBloodgroups = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_bloodgroup');
+        const res = await fetch('https://localhost:44328/api/Master/BloodGroup');
 
         if (!res.ok) {
           throw new Error('Failed to fetch blood groups');
@@ -143,7 +170,7 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
     useEffect(() => {
     const fetchReligions = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_religion');
+        const res = await fetch('https://localhost:44328/api/Master/Religions');
 
         if (!res.ok) {
           throw new Error('Failed to fetch blood groups');
@@ -166,7 +193,7 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
   useEffect(() => {
     const fetchDesignations = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_designation');
+        const res = await fetch('https://localhost:44328/api/Master/Designations');
 
         if (!res.ok) {
           throw new Error('Failed to fetch blood groups');
@@ -189,7 +216,7 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_department');
+        const res = await fetch('https://localhost:44328/api/Master/Department');
 
         if (!res.ok) {
           throw new Error('Failed to fetch blood groups');
@@ -213,7 +240,7 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
     useEffect(() => {
     const fetchQualifications = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_qualifications');
+        const res = await fetch('https://localhost:44328/api/Master/Qualifications');
 
         if (!res.ok) {
           throw new Error('Failed to fetch blood groups');
@@ -236,7 +263,7 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
       useEffect(() => {
     const fetchTeachingSubjects = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_teachingsubjects');
+        const res = await fetch('https://localhost:44328/api/Master/Subjects');
 
         if (!res.ok) {
           throw new Error('Failed to fetch blood groups');
@@ -259,7 +286,7 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
      useEffect(() => {
     const fetchStates = async () => {
       try {
-        const res = await fetch('https://localhost:44390/api/Master/m_state');
+        const res = await fetch('https://localhost:44328/api/Master/States');
 
         if (!res.ok) {
           throw new Error('Failed to fetch blood groups');
@@ -279,27 +306,26 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
   }, []);
 
       const [cities, setCities] = useState<any[]>([]);
-     useEffect(() => {
-    const fetchCity = async () => {
-      try {
-        const res = await fetch('https://localhost:44390/api/Master/m_city');
+    const [selectedStateId, setSelectedStateId] = useState<string | null>(null);
 
-        if (!res.ok) {
-          throw new Error('Failed to fetch blood groups');
-        }
+useEffect(() => {
+  if (!selectedStateId) return; // 🔥 avoid empty call
 
-        const data = await res.json();
-        console.log("API Response:", data); // 🔍 debug
+  const fetchCity = async () => {
+    try {
+      const res = await fetch(
+        `https://localhost:44328/api/Master/City_by-state/${selectedStateId}`
+      );
 
-        setCities(Array.isArray(data) ? data : []);
-      } catch (err) {
-        console.error(err);
-        setCities([]);
-      }
-    };
+      const data = await res.json();
+      setCities(data);
+    } catch (error) {
+      console.error("Error fetching cities:", error);
+    }
+  };
 
-    fetchCity();
-  }, []);
+  fetchCity();
+}, [selectedStateId]); // 🔥 runs when state changes
 
 
   // const handleSubmit = async (e: React.FormEvent) => {
@@ -416,33 +442,34 @@ const [bloodGroups, setBloodGroups] = useState<any[]>([]);
     
 try {
   // Prepare payload as a plain JavaScript object
+  // Convert string IDs to numbers for foreign key fields
   const payload = {
     firstName: formData.firstName,
     lastName: formData.lastName,
-    gender: formData.gender,
+    genderId: formData.gender ? parseInt(formData.gender, 10) : null,
     dateOfBirth: formData.dateOfBirth,
     employeeId: formData.employeeId,
-    designation: formData.designation,
-    department: formData.department,
-    qualification: formData.qualification,
-    experience: formData.experience,
+    designationId: formData.designation ? parseInt(formData.designation, 10) : null,
+    departmentId: formData.department ? parseInt(formData.department, 10) : null,
+    qualificationId: formData.qualification ? parseInt(formData.qualification, 10) : null,
+    experience: formData.experience ? parseInt(formData.experience, 10) : 0,
     joiningDate: formData.joiningDate,
-    bloodGroup: formData.bloodGroup,
-    religion: formData.religion,
+    bloodGroupId: formData.bloodGroup ? parseInt(formData.bloodGroup, 10) : null,
+    religionId: formData.religion ? parseInt(formData.religion, 10) : null,
     email: formData.email,
     phone: formData.phone,
     address: formData.address,
-    city: formData.city,
-    state: formData.state,
+    cityId: formData.city ? parseInt(formData.city, 10) : null,
+    stateId: formData.state ? parseInt(formData.state, 10) : null,
     zipCode: formData.zipCode,
     emergencyContact: formData.emergencyContact,
-    salary: formData.salary,
-    subjects: formData.subjects,
+    salary: formData.salary ? parseFloat(formData.salary) : 0,
+    subjectId: formData.subjects ? parseInt(formData.subjects, 10) : null,
     shortBio: formData.shortBio
   };
 
   // Send the request as JSON
-  const response = await fetch('https://localhost:44390/api/Teacher/add-teacher', {
+  const response = await fetch('https://localhost:44328/api/Teacher', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json', // crucial for model binding
@@ -454,12 +481,18 @@ try {
     // Handle HTTP errors
     const errorText = await response.text();
     console.error('Error submitting teacher:', errorText);
-    alert('Failed to submit teacher. Check console for details.');
+    toast.error('Failed to submit teacher', {
+      description: errorText || 'Check console for details.',
+    });
     return;
   }
 
   const data = await response.json();
   console.log('Teacher submitted successfully:', data);
+  toast.success('Teacher Added Successfully!', {
+    description: `${formData.firstName} ${formData.lastName} has been added.`,
+  });
+  setTimeout(() => navigate('/admin/teachers'), 1500);
 
 } catch (error) {
   console.error('Network or server error:', error);
@@ -534,8 +567,8 @@ try {
                       <option value="">Select Gender *</option>
 
                       {genders.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['genderId', 'id'])} value={getOptionId(g, ['genderId', 'id'])}>
+                          {getOptionLabel(g, ['genderName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -559,8 +592,8 @@ try {
                     <select {...fieldProps('bloodGroup')}>
                       <option value="">Select Blood Group *</option>
                      {bloodGroups.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['bloodGroupId', 'id'])} value={getOptionId(g, ['bloodGroupId', 'id'])}>
+                          {getOptionLabel(g, ['bloodGroupName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -573,8 +606,8 @@ try {
                     <select {...fieldProps('religion')}>
                       <option value="">Select Religion *</option>
                       {religions.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['religionId', 'id'])} value={getOptionId(g, ['religionId', 'id'])}>
+                          {getOptionLabel(g, ['religionName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -605,13 +638,13 @@ try {
 
                 {/* Row 3 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-4 sm:mb-6">
-                  <div>
+                  {/* <div>
                     <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">
                       Employee ID <span className="text-red-500">*</span>
                     </label>
                     <input type="text" {...fieldProps('employeeId')} />
                     <ErrorMsg name="employeeId" />
-                  </div>
+                  </div> */}
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">
                       Designation <span className="text-red-500">*</span>
@@ -619,8 +652,8 @@ try {
                     <select {...fieldProps('designation')}>
                       <option value="">Select Designation *</option>
                      {designations.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['designationId', 'id'])} value={getOptionId(g, ['designationId', 'id'])}>
+                          {getOptionLabel(g, ['designationName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -633,8 +666,8 @@ try {
                     <select {...fieldProps('department')}>
                       <option value="">Select Department *</option>
                      {departments.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['departmentId', 'id'])} value={getOptionId(g, ['departmentId', 'id'])}>
+                          {getOptionLabel(g, ['departmentName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -647,8 +680,8 @@ try {
                     <select {...fieldProps('qualification')}>
                       <option value="">Select Qualification *</option>
                      {qualifications.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['qualificationId', 'id'])} value={getOptionId(g, ['qualificationId', 'id'])}>
+                          {getOptionLabel(g, ['qualificationName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -687,8 +720,8 @@ try {
                     <select {...fieldProps('subjects')}>
                       <option value="">Select Subject</option>
                       {teachingSubjects.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['subjectId', 'id'])} value={getOptionId(g, ['subjectId', 'id'])}>
+                          {getOptionLabel(g, ['subjectName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -727,11 +760,17 @@ try {
                     <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">
                       State <span className="text-red-500">*</span>
                     </label>
-                    <select {...fieldProps('state')}>
+                    <select
+                      name="state"
+                      value={formData.state}
+                      onChange={handleStateChange}
+                      onBlur={handleBlur}
+                      className={inputCls(errors.state)}
+                    >
                       <option value="">Select State *</option>
                       {states.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['stateId', 'id'])} value={getOptionId(g, ['stateId', 'id'])}>
+                          {getOptionLabel(g, ['stateName', 'name'])}
                         </option>
                       ))}
                     </select>
@@ -744,8 +783,8 @@ try {
                     <select {...fieldProps('city')}>
                       <option value="">Select City *</option>
                       {cities.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name}
+                        <option key={getOptionId(g, ['cityId', 'id'])} value={getOptionId(g, ['cityId', 'id'])}>
+                          {getOptionLabel(g, ['cityName', 'name'])}
                         </option>
                       ))}
                     </select>

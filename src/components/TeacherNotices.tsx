@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
   Bell,
-  Plus,
   Calendar,
   Clock,
   Users,
@@ -19,6 +18,8 @@ import { Card } from './ui/card';
 import { PortalLayout } from './PortalLayout';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { getNoticesByAudience } from '../api/noticeApi';
+import type { NoticeResponse } from '../types/noticeTypes';
 
 interface Notice {
   id: number;
@@ -32,74 +33,70 @@ interface Notice {
   views: number;
 }
 
-const noticesData: Notice[] = [
-  {
-    id: 1,
-    title: 'Mid-Term Examination Schedule Released',
-    description: 'The mid-term examination schedule for all classes has been released. Students are requested to check the schedule and prepare accordingly.',
-    category: 'exam',
-    targetAudience: ['Grade 10-A', 'Grade 11-B'],
-    date: '2026-02-20',
-    author: 'Dr. Priya Sharma',
-    isPinned: true,
-    views: 145,
-  },
-  {
-    id: 2,
-    title: 'School Closed - National Holiday',
-    description: 'The school will remain closed on 26th January 2026 on account of Republic Day. Regular classes will resume from 27th January.',
-    category: 'holiday',
-    targetAudience: ['All Classes'],
-    date: '2026-01-20',
-    author: 'Administration',
-    isPinned: true,
-    views: 230,
-  },
-  {
-    id: 3,
-    title: 'Science Exhibition 2026',
-    description: 'Annual Science Exhibition will be held on 15th March 2026. All students are encouraged to participate and showcase their projects.',
-    category: 'event',
-    targetAudience: ['Grade 10-A', 'Grade 11-B'],
-    date: '2026-02-18',
-    author: 'Dr. Priya Sharma',
-    isPinned: false,
-    views: 98,
-  },
-  {
-    id: 4,
-    title: 'Assignment Submission Deadline Extended',
-    description: 'The deadline for Mathematics Assignment 3 has been extended to 28th February 2026 due to technical issues.',
-    category: 'urgent',
-    targetAudience: ['Grade 10-A'],
-    date: '2026-02-22',
-    author: 'Dr. Priya Sharma',
-    isPinned: false,
-    views: 76,
-  },
-  {
-    id: 5,
-    title: 'Parent-Teacher Meeting',
-    description: 'Parent-Teacher meeting is scheduled for 5th March 2026. Parents are requested to attend and discuss their ward\'s progress.',
-    category: 'general',
-    targetAudience: ['Grade 10-A', 'Grade 11-B'],
-    date: '2026-02-15',
-    author: 'Administration',
-    isPinned: false,
-    views: 187,
-  },
-];
+function formatDate(value?: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().split('T')[0];
+}
+
+function normalizeCategory(value: unknown): Notice['category'] {
+  const category = String(value ?? 'general').toLowerCase();
+  if (category.includes('urgent')) return 'urgent';
+  if (category.includes('exam')) return 'exam';
+  if (category.includes('event')) return 'event';
+  if (category.includes('holiday')) return 'holiday';
+  return 'general';
+}
+
+function mapNotice(notice: NoticeResponse): Notice {
+  const record = notice as unknown as Record<string, unknown>;
+  const audienceValue = String(record.targetAudience ?? record.targetAudienceName ?? 'All Classes');
+
+  return {
+    id: Number(notice.noticeId ?? record.id ?? 0),
+    title: String(notice.noticeTitle ?? record.title ?? 'Untitled Notice'),
+    description: String(notice.noticeContent ?? record.content ?? '-'),
+    category: normalizeCategory(record.category ?? record.categoryName),
+    targetAudience: audienceValue ? [audienceValue] : ['All Classes'],
+    date: formatDate(notice.publishDate ?? String(record.postedDate ?? '')),
+    author: String(record.postedBy ?? record.author ?? 'Administration'),
+    isPinned: Boolean(record.isPinned ?? false),
+    views: Number(record.views ?? 0),
+  };
+}
 
 export function TeacherNotices() {
-  const [notices, setNotices] = useState<Notice[]>(noticesData);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [filter, setFilter] = useState<'all' | 'general' | 'urgent' | 'exam' | 'event' | 'holiday'>('all');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const loadNotices = async () => {
+      try {
+        setIsLoading(true);
+        setError('');
+        const data = await getNoticesByAudience(2);
+        setNotices(data.map(mapNotice));
+      } catch (loadError) {
+        console.error('Failed to load teacher notices:', loadError);
+        setNotices([]);
+        setError('Unable to load teacher notices right now.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadNotices();
+  }, []);
 
   const filteredNotices = filter === 'all'
     ? notices
-    : notices.filter(notice => notice.category === filter);
+    : notices.filter((notice) => notice.category === filter);
 
-  const pinnedNotices = filteredNotices.filter(n => n.isPinned);
-  const regularNotices = filteredNotices.filter(n => !n.isPinned);
+  const pinnedNotices = filteredNotices.filter((notice) => notice.isPinned);
+  const regularNotices = filteredNotices.filter((notice) => !notice.isPinned);
 
   const getCategoryColor = (category: string) => {
     switch (category) {
@@ -136,9 +133,11 @@ export function TeacherNotices() {
   };
 
   const togglePin = (id: number) => {
-    setNotices(notices.map(notice =>
-      notice.id === id ? { ...notice, isPinned: !notice.isPinned } : notice
-    ));
+    setNotices((currentNotices) =>
+      currentNotices.map((notice) =>
+        notice.id === id ? { ...notice, isPinned: !notice.isPinned } : notice
+      )
+    );
   };
 
   return (
@@ -150,6 +149,18 @@ export function TeacherNotices() {
       breadcrumbs={["Home", "Teacher", "Notices"]}
     >
       <div className="space-y-6">
+        {isLoading && (
+          <Card className="p-4 bg-white border-amber-200 shadow-md">
+            <p className="text-slate-600">Loading notices...</p>
+          </Card>
+        )}
+
+        {error && !isLoading && (
+          <Card className="p-4 bg-red-50 border-red-200 shadow-md">
+            <p className="text-red-700">{error}</p>
+          </Card>
+        )}
+
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <motion.div
@@ -185,7 +196,7 @@ export function TeacherNotices() {
               </div>
               <p className="text-xs text-white/90 font-semibold mb-1">Urgent</p>
               <h3 className="text-2xl font-bold text-white">
-                {notices.filter(n => n.category === 'urgent').length}
+                {notices.filter((notice) => notice.category === 'urgent').length}
               </h3>
             </Card>
           </motion.div>
@@ -205,7 +216,7 @@ export function TeacherNotices() {
               </div>
               <p className="text-xs text-white/90 font-semibold mb-1">Exams</p>
               <h3 className="text-2xl font-bold text-white">
-                {notices.filter(n => n.category === 'exam').length}
+                {notices.filter((notice) => notice.category === 'exam').length}
               </h3>
             </Card>
           </motion.div>
@@ -225,7 +236,7 @@ export function TeacherNotices() {
               </div>
               <p className="text-xs text-white/90 font-semibold mb-1">Events</p>
               <h3 className="text-2xl font-bold text-white">
-                {notices.filter(n => n.category === 'event').length}
+                {notices.filter((notice) => notice.category === 'event').length}
               </h3>
             </Card>
           </motion.div>
@@ -245,11 +256,10 @@ export function TeacherNotices() {
               </div>
               <p className="text-xs text-white/90 font-semibold mb-1">This Month</p>
               <h3 className="text-2xl font-bold text-white">
-                {notices.filter(n => {
-                  const noticeDate = new Date(n.date);
+                {notices.filter((notice) => {
+                  const noticeDate = new Date(notice.date);
                   const now = new Date();
-                  return noticeDate.getMonth() === now.getMonth() &&
-                    noticeDate.getFullYear() === now.getFullYear();
+                  return noticeDate.getMonth() === now.getMonth() && noticeDate.getFullYear() === now.getFullYear();
                 }).length}
               </h3>
             </Card>
@@ -301,10 +311,6 @@ export function TeacherNotices() {
                 Holidays
               </Button>
             </div>
-            {/* <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
-              <Plus className="w-4 h-4 mr-2" />
-              Create Notice
-            </Button> */}
           </div>
         </Card>
 
@@ -325,12 +331,7 @@ export function TeacherNotices() {
               >
                 <Card className="bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-300 shadow-lg p-6 hover:shadow-xl transition-all">
                   <div className="flex items-start gap-4">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${notice.category === 'urgent' ? 'bg-red-100' :
-                        notice.category === 'exam' ? 'bg-blue-100' :
-                          notice.category === 'event' ? 'bg-purple-100' :
-                            notice.category === 'holiday' ? 'bg-green-100' :
-                              'bg-amber-100'
-                      }`}>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${notice.category === 'urgent' ? 'bg-red-100' : notice.category === 'exam' ? 'bg-blue-100' : notice.category === 'event' ? 'bg-purple-100' : notice.category === 'holiday' ? 'bg-green-100' : 'bg-amber-100'}`}>
                       {getCategoryIcon(notice.category)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -351,7 +352,7 @@ export function TeacherNotices() {
                           {new Date(notice.date).toLocaleDateString('en-IN', {
                             day: 'numeric',
                             month: 'short',
-                            year: 'numeric'
+                            year: 'numeric',
                           })}
                         </span>
                         <span className="flex items-center gap-1">
@@ -391,9 +392,7 @@ export function TeacherNotices() {
         {/* Regular Notices */}
         {regularNotices.length > 0 && (
           <div className="space-y-4">
-            {pinnedNotices.length > 0 && (
-              <h2 className="text-xl font-bold text-slate-900">All Notices</h2>
-            )}
+            {pinnedNotices.length > 0 && <h2 className="text-xl font-bold text-slate-900">All Notices</h2>}
             {regularNotices.map((notice, index) => (
               <motion.div
                 key={notice.id}
@@ -404,12 +403,7 @@ export function TeacherNotices() {
               >
                 <Card className="bg-white border-amber-200 shadow-lg p-6 hover:shadow-xl transition-all">
                   <div className="flex items-start gap-4">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${notice.category === 'urgent' ? 'bg-red-100' :
-                        notice.category === 'exam' ? 'bg-blue-100' :
-                          notice.category === 'event' ? 'bg-purple-100' :
-                            notice.category === 'holiday' ? 'bg-green-100' :
-                              'bg-amber-100'
-                      }`}>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${notice.category === 'urgent' ? 'bg-red-100' : notice.category === 'exam' ? 'bg-blue-100' : notice.category === 'event' ? 'bg-purple-100' : notice.category === 'holiday' ? 'bg-green-100' : 'bg-amber-100'}`}>
                       {getCategoryIcon(notice.category)}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -430,7 +424,7 @@ export function TeacherNotices() {
                           {new Date(notice.date).toLocaleDateString('en-IN', {
                             day: 'numeric',
                             month: 'short',
-                            year: 'numeric'
+                            year: 'numeric',
                           })}
                         </span>
                         <span className="flex items-center gap-1">
@@ -465,6 +459,12 @@ export function TeacherNotices() {
               </motion.div>
             ))}
           </div>
+        )}
+
+        {!isLoading && !error && notices.length === 0 && (
+          <Card className="p-6 bg-white border-amber-200 shadow-md">
+            <p className="text-slate-600">No notices available.</p>
+          </Card>
         )}
       </div>
     </PortalLayout>

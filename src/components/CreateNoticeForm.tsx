@@ -1,10 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Bell, Save, RotateCcw, Upload, X, FileText } from 'lucide-react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { PortalLayout } from './PortalLayout';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
+import {
+  createNoticeFormData,
+  getNoticeCategories,
+  getNoticePriorities,
+  getNoticeTargetAudiences,
+} from '../api/noticeApi';
+import type {
+  NoticeCategory,
+  NoticePriority,
+  NoticeTargetAudience,
+} from '../types/noticeTypes';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const REQUIRED_FIELDS = [
@@ -57,9 +68,39 @@ function inputCls(error: string | null) {
 export function CreateNoticeForm() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState<Record<string, string>>(INITIAL_FORM);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [categories, setCategories] = useState<NoticeCategory[]>([]);
+  const [priorities, setPriorities] = useState<NoticePriority[]>([]);
+  const [audiences, setAudiences] = useState<NoticeTargetAudience[]>([]);
+
+  useEffect(() => {
+    const loadDropdowns = async () => {
+      try {
+        setIsLoading(true);
+        const [categoryData, priorityData, audienceData] = await Promise.all([
+          getNoticeCategories(),
+          getNoticePriorities(),
+          getNoticeTargetAudiences(),
+        ]);
+
+        setCategories(categoryData);
+        setPriorities(priorityData);
+        setAudiences(audienceData);
+      } catch (error) {
+        console.error('Failed to load notice dropdowns', error);
+        toast.error('Unable to load form options', {
+          description: 'Please refresh and try again.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDropdowns();
+  }, []);
 
   // ── Derived errors ─────────────────────────────────────────────────────────
   const errors: Record<string, string | null> = {};
@@ -134,19 +175,26 @@ export function CreateNoticeForm() {
 
     setIsSubmitting(true);
     try {
-      const payload = new FormData();
-      Object.entries(formData).forEach(([key, value]) => payload.append(key, value));
-      attachments.forEach((file) => payload.append('attachments', file));
-
-      const response = await fetch('http://localhost:5258/notices', {
-        method: 'POST',
-        body: payload,
+      const formPayload = new FormData();
+      formPayload.append('NoticeTitle', formData.title.trim());
+      if (formData.noticeNumber?.trim()) {
+        formPayload.append('NoticeNumber', formData.noticeNumber.trim());
+      }
+      formPayload.append('CategoryId', formData.category);
+      formPayload.append('PriorityId', formData.priority);
+      formPayload.append('TargetAudienceId', formData.targetAudience);
+      formPayload.append('PublishDate', formData.publishDate);
+      if (formData.expiryDate) {
+        formPayload.append('ExpiryDate', formData.expiryDate);
+      }
+      formPayload.append('NoticeContent', formData.content.trim());
+      
+      // Append attachments to FormData
+      attachments.forEach((file) => {
+        formPayload.append('Attachment', file);
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to publish notice');
-      }
+      await createNoticeFormData(formPayload);
 
       toast.success('Notice Published Successfully!', {
         description: `"${formData.title}" has been published to ${formData.targetAudience}.`,
@@ -154,9 +202,11 @@ export function CreateNoticeForm() {
 
       setTimeout(() => navigate('/admin/notices'), 1000);
     } catch (error) {
-      toast.error('Failed to publish notice', {
-        description: error instanceof Error ? error.message : 'Something went wrong.',
+      const errorMessage = error instanceof Error ? error.message : 'Could not connect to the server.';
+      toast.error('Server Unreachable', {
+        description: errorMessage,
       });
+      console.error('Network error:', error);
     } finally {
       setIsSubmitting(false);
     }
@@ -212,7 +262,7 @@ export function CreateNoticeForm() {
                     />
                     <ErrorMsg name="title" />
                   </div>
-                  <div>
+                  {/* <div>
                     <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">
                       Notice Number
                     </label>
@@ -222,7 +272,7 @@ export function CreateNoticeForm() {
                       {...fieldProps('noticeNumber')}
                     />
                     <ErrorMsg name="noticeNumber" />
-                  </div>
+                  </div> */}
                 </div>
 
                 {/* Row 2 */}
@@ -231,18 +281,15 @@ export function CreateNoticeForm() {
                     <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">
                       Category <span className="text-red-500">*</span>
                     </label>
-                    <select {...fieldProps('category')}>
-                      <option value="">Select Category *</option>
-                      <option value="academic">Academic</option>
-                      <option value="administrative">Administrative</option>
-                      <option value="event">Event</option>
-                      <option value="holiday">Holiday</option>
-                      <option value="examination">Examination</option>
-                      <option value="fee">Fee Related</option>
-                      <option value="admission">Admission</option>
-                      <option value="sports">Sports & Culture</option>
-                      <option value="general">General</option>
-                      <option value="urgent">Urgent</option>
+                    <select {...fieldProps('category')} disabled={isLoading && categories.length === 0}>
+                      <option value="">{categories.length === 0 ? 'Loading categories...' : 'Select Category *'}</option>
+                      {categories.length > 0 ? (
+                        categories.map((category) => (
+                          <option key={category.categoryId} value={category.categoryId.toString()}>
+                            {category.categoryName}
+                          </option>
+                        ))
+                      ) : null}
                     </select>
                     <ErrorMsg name="category" />
                   </div>
@@ -250,12 +297,15 @@ export function CreateNoticeForm() {
                     <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">
                       Priority <span className="text-red-500">*</span>
                     </label>
-                    <select {...fieldProps('priority')}>
-                      <option value="">Select Priority *</option>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                      <option value="urgent">Urgent</option>
+                    <select {...fieldProps('priority')} disabled={isLoading && priorities.length === 0}>
+                      <option value="">{priorities.length === 0 ? 'Loading priorities...' : 'Select Priority *'}</option>
+                      {priorities.length > 0 ? (
+                        priorities.map((priority) => (
+                          <option key={priority.priorityId} value={priority.priorityId.toString()}>
+                            {priority.priorityName}
+                          </option>
+                        ))
+                      ) : null}
                     </select>
                     <ErrorMsg name="priority" />
                   </div>
@@ -263,16 +313,15 @@ export function CreateNoticeForm() {
                     <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-2">
                       Target Audience <span className="text-red-500">*</span>
                     </label>
-                    <select {...fieldProps('targetAudience')}>
-                      <option value="">Select Audience *</option>
-                      <option value="all">All (Students, Teachers & Parents)</option>
-                      <option value="students">Students Only</option>
-                      <option value="teachers">Teachers Only</option>
-                      <option value="parents">Parents Only</option>
-                      <option value="staff">Staff Members</option>
-                      {Array.from({ length: 12 }, (_, i) => (
-                        <option key={i + 1} value={`class-${i + 1}`}>Class {i + 1}</option>
-                      ))}
+                    <select {...fieldProps('targetAudience')} disabled={isLoading && audiences.length === 0}>
+                      <option value="">{audiences.length === 0 ? 'Loading audiences...' : 'Select Audience *'}</option>
+                      {audiences.length > 0 ? (
+                        audiences.map((audience) => (
+                          <option key={audience.id} value={audience.id.toString()}>
+                            {audience.audienceName}
+                          </option>
+                        ))
+                      ) : null}
                     </select>
                     <ErrorMsg name="targetAudience" />
                   </div>

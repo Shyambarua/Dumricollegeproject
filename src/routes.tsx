@@ -261,6 +261,11 @@ const TeacherManagement = lazy(() =>
     default: m.TeacherManagement,
   }))
 );
+const ViewTeacher = lazy(() =>
+  import("./components/ViewTeacher").then((m) => ({
+    default: m.ViewTeacher,
+  }))
+);
 const ScheduleManagement = lazy(() =>
   import("./components/ScheduleManagement").then((m) => ({
     default: m.ScheduleManagement,
@@ -289,6 +294,11 @@ const ExamManagement = lazy(() =>
     default: m.ExamManagement,
   }))
 );
+const ExamDetail = lazy(() =>
+  import("./components/ExamDetail").then((m) => ({
+    default: m.ExamDetail,
+  }))
+);
 const AllStudentsData = lazy(() =>
   import("./components/AllStudentsData").then((m) => ({
     default: m.AllStudentsData,
@@ -303,6 +313,9 @@ const AddTeacherForm = lazy(() =>
   import("./components/AddTeacherForm").then((m) => ({
     default: m.AddTeacherForm,
   }))
+);
+const UpdateTeacher = lazy(() =>
+  import("./components/UpdateTeacher").then((m) => ({ default: m.UpdateTeacher }))
 );
 const AccountManagement = lazy(() =>
   import("./components/AccountManagement").then((m) => ({
@@ -349,6 +362,9 @@ const ScheduleNewExam = lazy(() =>
   import("./components/ScheduleExamForm").then((m) => ({
     default: m.ScheduleExamForm,
   }))
+);
+const UpdateExam = lazy(() =>
+  import("./components/UpdateExam").then((m) => ({ default: m.UpdateExam }))
 );
 const CreateNotice = lazy(() =>
   import("./components/CreateNoticeForm").then((m) => ({
@@ -608,12 +624,15 @@ export const router = createBrowserRouter([
       { path: "/admin/dashboard", Component: EnhancedAdminDashboard },
       { path: "/admin/admissions", Component: AdmissionManagement },
       { path: "/admin/teachers", Component: TeacherManagement },
+      { path: "/admin/teacher-details/:teacherId", Component: ViewTeacher },
       { path: "/admin/schedule", Component: ScheduleManagement },
       { path: "/admin/certificates", Component: CertificateRequestManagement },
       { path: "/admin/fee", Component: FeeManagement },
       { path: "/admin/reports", Component: Reports },
       { path: "/admin/admin-fee-payment", Component: AdminFeePayment },
       { path: "/admin/exams", Component: ExamManagement },
+      { path: "/admin/exams/:examId", Component: ExamDetail },
+      { path: "/admin/exams/edit/:examId", Component: UpdateExam },
       { path: "/admin/students", Component: AllStudentsData },
       { path: "/admin/add-student", Component: AddStudentForm },
       {
@@ -626,11 +645,14 @@ export const router = createBrowserRouter([
   },
 
       { path: "/admin/add-teacher", Component: AddTeacherForm },
+      { path: "/admin/edit-teacher/:teacherId", Component: UpdateTeacher },
       { path: "/admin/account", Component: AccountManagement },
       { path: "/admin/classes", Component: ClassManagement },
       { path: "/admin/subjects", Component: SubjectManagement },
       { path: "/admin/attendance", Component: AttendanceManagement },
       { path: "/admin/notices", Component: NoticeManagement },
+      { path: "/admin/view-notice/:id", Component: lazy(() => import("./components/ViewNotice")) },
+      { path: "/admin/update-notice/:id", Component: lazy(() => import("./components/UpdateNotice")) },
       { path: "/admin/messages", Component: MessageManagement },
       { path: "/admin/add-class", Component: AddNewClass },
       { path: "/admin/add-subject", Component: AddNewSubject },

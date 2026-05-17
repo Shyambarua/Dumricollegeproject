@@ -25,6 +25,11 @@ export interface AdditionalSubject {
   subjectName: string;
 }
 
+export interface SubjectDto {
+  id: number;
+  name: string;
+}
+
 export interface ClassDto {
   id: number;
   name: string;
